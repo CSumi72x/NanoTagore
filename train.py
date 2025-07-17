@@ -72,6 +72,8 @@ backend = 'nccl' # 'nccl', 'gloo', etc.
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = True # use PyTorch 2.0 to compile the model to be faster
+device='cpu'
+compile=False
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
@@ -100,6 +102,9 @@ else:
     ddp_world_size = 1
 tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
 print(f"tokens per iteration will be: {tokens_per_iter:,}")
+
+
+
 
 if master_process:
     os.makedirs(out_dir, exist_ok=True)
@@ -200,7 +205,15 @@ optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta
 if init_from == 'resume':
     optimizer.load_state_dict(checkpoint['optimizer'])
 checkpoint = None # free up memory
-
+start_iter = 0
+ckpt_path = os.path.join(out_dir, 'checkpoint_latest.pt')
+if always_save_checkpoint and os.path.exists(ckpt_path):
+    print(f"Restoring from {ckpt_path}")
+    ckpt = torch.load(ckpt_path, map_location=device)
+    model.load_state_dict(ckpt['model'])
+    optimizer.load_state_dict(ckpt['optimizer'])
+    start_iter = ckpt['iter_num'] + 1
+    print(f"Resumed at iteration {start_iter}")
 # compile the model
 if compile:
     print("compiling the model... (takes a ~minute)")
@@ -245,7 +258,20 @@ def get_lr(it):
 if wandb_log and master_process:
     import wandb
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
+# Before training loop
+iter_num = 0
+best_val_loss = float('inf')
+checkpoint_path = os.path.join(out_dir, 'checkpoint_latest.pt')
 
+# Resume if checkpoint exists
+if always_save_checkpoint and os.path.exists(checkpoint_path):
+    print(f"Resuming from checkpoint: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    raw_model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    iter_num = checkpoint['iter_num'] + 1
+    best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+    print(f"Resumed at iteration {iter_num}, best val loss = {best_val_loss}")
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
 t0 = time.time()
@@ -271,8 +297,8 @@ while True:
                 "lr": lr,
                 "mfu": running_mfu*100, # convert to percentage
             })
-        if losses['val'] < best_val_loss or always_save_checkpoint:
-            best_val_loss = losses['val']
+      if losses['val'] < best_val_loss or always_save_checkpoint:
+        best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
                     'model': raw_model.state_dict(),
@@ -282,8 +308,9 @@ while True:
                     'best_val_loss': best_val_loss,
                     'config': config,
                 }
-                print(f"saving checkpoint to {out_dir}")
-                torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
+            torch.save(checkpoint, os.path.join(out_dir, 'checkpoint_latest.pt'))
+            torch.save(checkpoint, os.path.join(out_dir, f'checkpoint_{iter_num}.pt'))
+            print(f"✅ Saved checkpoint at iteration {iter_num} (val loss = {best_val_loss:.4f})")
     if iter_num == 0 and eval_only:
         break
 
