@@ -308,7 +308,7 @@ while True:
                     'best_val_loss': best_val_loss,
                     'config': config,
                 }
-                 checkpoint_dir = '/kaggle/working/'
+                 checkpoint_dir ='/kaggle/working/'
                  checkpoint_path_latest = os.path.join(checkpoint_dir, 'checkpoint_latest.pt')
                  checkpoint_path_named = os.path.join(checkpoint_dir, f'checkpoint_{iter_num}.pt')
 
