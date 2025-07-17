@@ -308,9 +308,16 @@ while True:
                     'best_val_loss': best_val_loss,
                     'config': config,
                 }
-            torch.save(checkpoint, os.path.join(out_dir, 'checkpoint_latest.pt'))
-            torch.save(checkpoint, os.path.join(out_dir, f'checkpoint_{iter_num}.pt'))
-            print(f"✅ Saved checkpoint at iteration {iter_num} (val loss = {best_val_loss:.4f})")
+                checkpoint_dir = '/kaggle/working/'
+                checkpoint_path_latest = os.path.join(checkpoint_dir, 'checkpoint_latest.pt')
+                checkpoint_path_named = os.path.join(checkpoint_dir, f'checkpoint_{iter_num}.pt')
+
+# save checkpoint
+                 torch.save(checkpoint, checkpoint_path_latest)
+                 torch.save(checkpoint, checkpoint_path_named)
+                 torch.save(checkpoint, os.path.join(out_dir, 'checkpoint_latest.pt'))
+                 torch.save(checkpoint, os.path.join(out_dir, f'checkpoint_{iter_num}.pt'))
+                 print(f"✅ Saved checkpoint at iteration {iter_num} (val loss = {best_val_loss:.4f})")
     if iter_num == 0 and eval_only:
         break
 
